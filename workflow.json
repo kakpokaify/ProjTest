@@ -1,0 +1,981 @@
+{
+  "name": "AI product Images",
+  "nodes": [
+    {
+      "parameters": {
+        "authentication": "nocoDbApiToken",
+        "operation": "getAll",
+        "projectId": "p85ml4dqjlgsny2",
+        "table": "md779de3lp72rr5",
+        "limit": 1,
+        "options": {
+          "fields": [],
+          "where": "=(Telegram ID,eq,{{ $json.message.from.id }})"
+        }
+      },
+      "type": "n8n-nodes-base.nocoDb",
+      "typeVersion": 3,
+      "position": [
+        -832,
+        -1280
+      ],
+      "id": "7771c3df-156a-416c-9e8b-13af322e6043",
+      "name": "Search by ID",
+      "alwaysOutputData": true,
+      "credentials": {
+        "nocoDbApiToken": {
+          "id": "RP2VoRhtiFMl8fuG",
+          "name": "NocoDB Token account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "check-user",
+              "leftValue": "={{ !!$json.Id }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -720,
+        -1456
+      ],
+      "id": "0e3507ba-af3a-4952-bd1c-520ff9675bc8",
+      "name": "User Exists?"
+    },
+    {
+      "parameters": {
+        "authentication": "nocoDbApiToken",
+        "operation": "create",
+        "projectId": "p85ml4dqjlgsny2",
+        "table": "md779de3lp72rr5",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldName": "Telegram ID",
+              "fieldValue": "={{ $('Telegram Trigger').item.json.message.from.id }}"
+            },
+            {
+              "fieldName": "Username",
+              "fieldValue": "={{ $('Telegram Trigger').item.json.message.from.username }}"
+            },
+            {
+              "fieldName": "State",
+              "fieldValue": "active"
+            },
+            {
+              "fieldName": "Images",
+              "fieldValue": "[]"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.nocoDb",
+      "typeVersion": 3,
+      "position": [
+        -368,
+        -1568
+      ],
+      "id": "286ec23c-9ce4-4742-8565-e6778b59a942",
+      "name": "Create User",
+      "credentials": {
+        "nocoDbApiToken": {
+          "id": "RP2VoRhtiFMl8fuG",
+          "name": "NocoDB Token account 3"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// FIX: Access the user record directly — it is already the first item object,\n// not an array. The original code used userData[0] which is incorrect.\nconst userData = $('Search by ID').first().json;\n\nif (!userData || !userData.Id) {\n  console.log('⚠️ Creating new user...');\n  return [{ json: { isNew: true } }];\n}\n\nconsole.log('✅ User found');\n\nreturn [{ json: userData }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -272,
+        -1312
+      ],
+      "id": "25611c25-e5b4-4850-94de-9a8b49c5624d",
+      "name": "Get User Data"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "callback-check",
+              "leftValue": "={{ $json.callbackQuery }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -80,
+        -1296
+      ],
+      "id": "4bb805b7-1de7-44b1-b0e0-1455914d9842",
+      "name": "Is Callback?"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Handle different callbacks\nconst callbackData = $json?.callbackQuery?.data || '';\n\nif (callbackData === 'show_images') {\n  return [{ json: { action: 'show_images', ...$json } }];\n} else if (callbackData === 'send_to_ai') {\n  return [{ json: { action: 'send_to_ai', ...$json } }];\n}\n\nreturn [{ json: { action: 'unknown', ...$json } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        64,
+        -1232
+      ],
+      "id": "d5e1d955-87b0-49bc-b0f8-ae5714746b4e",
+      "name": "Handle Callback"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "show_images",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "show-img"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "show_images"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "send_to_ai",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "send-ai"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "send_to_ai"
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        208,
+        -1232
+      ],
+      "id": "9b61ccc5-b65c-4c1e-a170-820dca3c4608",
+      "name": "Callback Switch"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.messageType }}",
+                    "rightValue": "photo",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "5bdaa6e3-22ef-448d-9ddf-6fa4fd414818"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "photo"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "82e6d46f-fe62-4225-8e29-e50e2f52e433",
+                    "leftValue": "={{ $json.messageType }}",
+                    "rightValue": "document",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "document"
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        400,
+        -1504
+      ],
+      "id": "8dfc52a0-c1c7-4e01-9d07-c4c361e2b345",
+      "name": "Content Type",
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "jsCode": "const msg = $('Telegram Trigger').first().json?.message || {};\n\nlet type = 'unknown';\nif (msg.photo) type = 'photo';\nelse if (msg.document) type = 'document';\nelse if (msg.text) type = 'text';\n\nconst result = {\n  messageType: type\n};\n\nif (type === 'photo') {\n  result.isImage = true;\n  result.fileMime = 'image/jpeg';\n  result.fileName = 'photo_' + Date.now() + '.jpg';\n  result.fileId = msg.photo[msg.photo.length - 1]?.file_id;\n}\n\nif (type === 'document') {\n  const mime = msg.document?.mime_type || 'unknown';\n  result.fileMime = mime;\n  result.fileName = msg.document?.file_name || 'file';\n  result.isImage = /^image\\//.test(mime);\n  // FIX: also capture fileId for documents so downstream nodes\n  // don't need to re-access the raw message object.\n  result.fileId = msg.document?.file_id;\n}\n\nreturn [{ json: { ...$json, ...result } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        -1488
+      ],
+      "id": "20928c84-8b96-41cb-ad12-6623729ccc1d",
+      "name": "Determine Type"
+    },
+    {
+      "parameters": {
+        "jsCode": "// FIX: fileId and mimeType are already extracted by Determine Type.\n// Only add the fields that are unique to the photo branch.\nreturn [{\n  json: {\n    ...items[0].json,\n    contentType: 'image',\n    source: 'telegram_photo'\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        -1680
+      ],
+      "id": "34785094-5237-4158-af46-7b1b948897c9",
+      "name": "Photo Branch"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.isImage }}",
+                    "rightValue": "true",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    },
+                    "id": "31517a21-f558-4241-b5ed-9ca205e93486"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "img"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "15ca0c5e-e665-4b06-abc3-0e757ea677f2",
+                    "leftValue": "={{ $json.isImage }}",
+                    "rightValue": "true",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "false",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "doc"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        736,
+        -1456
+      ],
+      "id": "703dfa20-63e0-4081-a637-2cdce7fe21f2",
+      "name": "Image Switch"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        880,
+        -1696
+      ],
+      "id": "9069c6a7-1b65-4f3b-bd21-b35236c6ab20",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "jsCode": "console.log('📋 Validating image:', $json);\n\nconst isImage = $json?.isImage === true;\n\nif (!isImage) {\n  console.error('❌ Not an image!');\n  return [];\n}\n\nconsole.log('✅ Image approved');\n\nreturn [{\n  json: {\n    ...$json,\n    validated: true,\n    validatedAt: new Date().toISOString()\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1072,
+        -1696
+      ],
+      "id": "491ff9a4-881d-4a39-afac-c02f4c1737ac",
+      "name": "Validate Image"
+    },
+    {
+      "parameters": {
+        "jsCode": "// FIX: Get User Data returns a plain object, not an array.\n// The original code used .json[0] which is incorrect.\nconst userData = $('Get User Data').first().json || {};\nlet images = [];\n\n// Parse existing images from DB\nif (userData.Images) {\n  try {\n    images = typeof userData.Images === 'string'\n      ? JSON.parse(userData.Images)\n      : userData.Images;\n  } catch (e) {\n    console.error('Error parsing images:', e);\n    images = [];\n  }\n}\n\n// FIX: Use a timestamp-prefixed ID for better uniqueness guarantees\n// compared to bare Math.random(). Also replace deprecated substr with substring.\nconst newImage = {\n  id: Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 9),\n  fileName: $json?.fileName || 'photo.jpg',\n  fileId: $json?.fileId || null,\n  mimeType: $json?.fileMime || 'image/jpeg',\n  addedAt: new Date().toISOString()\n};\n\nimages.push(newImage);\n\nconsole.log('📸 Saved. Total in DB:', images.length);\n\n// Prepare for DB update\nreturn [{\n  json: {\n    userId: userData.Id,\n    images: images,\n    imagesJson: JSON.stringify(images),\n    success: true,\n    total: images.length,\n    isFirstImage: images.length === 1\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1232,
+        -1696
+      ],
+      "id": "5bc7c209-c8b1-471e-8e6b-57aea5f690d5",
+      "name": "Save to DB"
+    },
+    {
+      "parameters": {
+        "authentication": "nocoDbApiToken",
+        "operation": "update",
+        "projectId": "p85ml4dqjlgsny2",
+        "table": "md779de3lp72rr5",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldName": "Id",
+              "fieldValue": "={{ $('Search by ID').item.json.Id }}"
+            },
+            {
+              "fieldName": "Images",
+              "fieldValue": "={{ $json.imagesJson }}"
+            },
+            {
+              "fieldName": "State",
+              "fieldValue": "waiting_for_ai"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.nocoDb",
+      "typeVersion": 3,
+      "position": [
+        1424,
+        -1696
+      ],
+      "id": "c9c62c3a-5c8f-4f0d-b1da-f75b068540c5",
+      "name": "Update User DB",
+      "credentials": {
+        "nocoDbApiToken": {
+          "id": "Fbhi6Azsmvdr7Ud1",
+          "name": "NocoDB Token account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get images from callback\nconst callbackData = $json;\nlet images = [];\n\nif (callbackData.Images) {\n  try {\n    images = typeof callbackData.Images === 'string'\n      ? JSON.parse(callbackData.Images)\n      : callbackData.Images;\n  } catch (e) {\n    images = [];\n  }\n}\n\nif (!images || images.length === 0) {\n  console.warn('⚠️ No images found');\n  return [{ json: { error: 'No images' } }];\n}\n\nconsole.log(`📦 Found ${images.length} images`);\n\nreturn [{\n  json: {\n    images: images,\n    count: images.length,\n    chatId: $('Telegram Trigger').first().json.message.from.id\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        -1120
+      ],
+      "id": "31c46a81-d692-4342-81e7-f732d269f0c4",
+      "name": "Read Images from DB"
+    },
+    {
+      "parameters": {
+        "jsCode": "const images = $json?.images || [];\n\nconsole.log('📸 Sending', images.length, 'images');\n\nreturn images.map((img, idx) => ({\n  json: {\n    fileId: img.fileId,\n    caption: `📸 ${idx + 1}/${images.length}: ${img.fileName}`,\n    chatId: $json.chatId\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        608,
+        -1120
+      ],
+      "id": "9528ec94-0051-45d5-a3c6-144b38f8321f",
+      "name": "Format Images"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "Фотки",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        848,
+        -1120
+      ],
+      "id": "3939fcc9-345e-4796-a3e6-4d6a57e0051d",
+      "name": "Send Photo",
+      "webhookId": "54ea0898-35ff-4ca6-b60d-effb54f158a5",
+      "credentials": {
+        "telegramApi": {
+          "id": "zdbyb5MqvwI0185u",
+          "name": "Telegram API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "nocoDbApiToken",
+        "operation": "update",
+        "projectId": "p6vinokqhwrilft",
+        "table": "m4sbi1j2oq8s87i",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldName": "Id",
+              "fieldValue": "={{ $json.Id }}"
+            },
+            {
+              "fieldName": "Images",
+              "fieldValue": "[]"
+            },
+            {
+              "fieldName": "State",
+              "fieldValue": "active"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.nocoDb",
+      "typeVersion": 3,
+      "position": [
+        1072,
+        -1120
+      ],
+      "id": "eda1613b-63c2-4a4e-8fde-901630c6eb4f",
+      "name": "Clear DB - Set Waiting",
+      "credentials": {
+        "nocoDbApiToken": {
+          "id": "RP2VoRhtiFMl8fuG",
+          "name": "NocoDB Token account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').first().json.message.from.id }}",
+        "text": "✅ Фото отправлены на обработку! Статус: waiting",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1248,
+        -1120
+      ],
+      "id": "6a49481c-32e6-4c53-b435-fdb1a3c0d04a",
+      "name": "Send Confirmation",
+      "webhookId": "54ea0898-35ff-4ca6-b60d-effb54f158a7",
+      "credentials": {
+        "telegramApi": {
+          "id": "zdbyb5MqvwI0185u",
+          "name": "Telegram API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $vars.TELEGRAM_API_BASE_URL }}/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"chat_id\": \"{{ $('Telegram Trigger').item.json.message.chat.id }}\",\n  \"text\": \"✅ Привет! Выбери действие:\",\n  \"reply_markup\": {\n    \"inline_keyboard\": [\n      [\n        {\n          \"text\": \"📸 Показать все фото\",\n          \"callback_data\": \"show_images\"\n        },\n        {\n          \"text\": \"✈️ Отправить на обработку\",\n          \"callback_data\": \"send_to_ai\"\n        }\n      ]\n    ]\n  }\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2048,
+        -1712
+      ],
+      "id": "da5c490d-2a94-489d-9eb3-4d7a267385a4",
+      "name": "Telegram HTTP"
+    },
+    {
+      "parameters": {
+        "putAllInOneKey": false
+      },
+      "type": "n8n-nodes-globals.globalConstants",
+      "typeVersion": 1,
+      "position": [
+        -208,
+        -1520
+      ],
+      "id": "a3df6015-72d3-41d3-9fff-ef56608a7121",
+      "name": "Global Constants",
+      "alwaysOutputData": true,
+      "executeOnce": false,
+      "retryOnFail": false,
+      "credentials": {
+        "globalConstantsApi": {
+          "id": "ucxrVVsvUgdFHJWr",
+          "name": "Global Constants account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Resolve the final userId to pass to the next step.\n// Checks both the DB record Id and the Telegram callback sender id.\nconst userId = $json.Id || $json.callback_query?.from?.id;\n\nif (!userId) {\n  console.log('❌ Нет userId');\n  return [];\n}\n\nconsole.log('✅ User ID:', userId);\n\nreturn [\n  {\n    json: {\n      userId: userId,\n      ...$json\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1632,
+        -1712
+      ],
+      "id": "7bf237c8-e700-46a6-89a0-98833fdb7ff5",
+      "name": "Check Duplicate",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "updates": [
+          "message",
+          "callback_query"
+        ],
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1024,
+        -1312
+      ],
+      "id": "54b4840a-5b32-4524-833f-f8b3af8988a3",
+      "name": "Telegram Trigger",
+      "webhookId": "ad64ab83-3db6-4992-b63a-69d3bc2e4175",
+      "executeOnce": false,
+      "alwaysOutputData": false,
+      "notesInFlow": false,
+      "credentials": {
+        "telegramApi": {
+          "id": "zdbyb5MqvwI0185u",
+          "name": "Telegram API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "callback",
+        "queryId": "=",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2240,
+        -1728
+      ],
+      "id": "9170845f-4c51-4ad3-a268-a222e65195f7",
+      "name": "Answer Query a callback",
+      "webhookId": "7b8cfda3-ac25-4069-b291-814ddbf48ce1",
+      "credentials": {
+        "telegramApi": {
+          "id": "zdbyb5MqvwI0185u",
+          "name": "Telegram API"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Search by ID": {
+      "main": [
+        [
+          {
+            "node": "User Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "User Exists?": {
+      "main": [
+        [
+          {
+            "node": "Create User",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get User Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create User": {
+      "main": [
+        [
+          {
+            "node": "Global Constants",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get User Data": {
+      "main": [
+        [
+          {
+            "node": "Is Callback?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Callback?": {
+      "main": [
+        [
+          {
+            "node": "Handle Callback",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Determine Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle Callback": {
+      "main": [
+        [
+          {
+            "node": "Callback Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Callback Switch": {
+      "main": [
+        [
+          {
+            "node": "Read Images from DB",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Read Images from DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Determine Type": {
+      "main": [
+        [
+          {
+            "node": "Content Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Content Type": {
+      "main": [
+        [
+          {
+            "node": "Photo Branch",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Image Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Photo Branch": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Image Switch": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ],
+        []
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Validate Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Image": {
+      "main": [
+        [
+          {
+            "node": "Save to DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to DB": {
+      "main": [
+        [
+          {
+            "node": "Update User DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update User DB": {
+      "main": [
+        [
+          {
+            "node": "Check Duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Images from DB": {
+      "main": [
+        [
+          {
+            "node": "Format Images",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Images": {
+      "main": [
+        [
+          {
+            "node": "Send Photo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Photo": {
+      "main": [
+        [
+          {
+            "node": "Clear DB - Set Waiting",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clear DB - Set Waiting": {
+      "main": [
+        [
+          {
+            "node": "Send Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Global Constants": {
+      "main": [
+        [
+          {
+            "node": "Get User Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Duplicate": {
+      "main": [
+        [
+          {
+            "node": "Telegram HTTP",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Search by ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram HTTP": {
+      "main": [
+        [
+          {
+            "node": "Answer Query a callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "422d4a42-29bd-4d24-b68c-a609bbe934df",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "bce7f42b6f578d792a99386f63ececbb9b55fa60da1b9436e5bbff9e94767129"
+  },
+  "id": "YVQJof3Eln3XmaiM",
+  "tags": []
+}
