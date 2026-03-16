@@ -5,7 +5,7 @@
       "parameters": {
         "httpMethod": "POST",
         "path": "telegram-webhook",
-        "responseMode": "responseNode",
+        "responseMode": "onReceived",
         "options": {}
       },
       "id": "webhook-entry",
@@ -39,7 +39,7 @@
           "parameters": [
             {
               "name": "where",
-              "value": "(Telegram ID,eq,{{ $json.userId }})"
+              "value": "=(Telegram ID,eq,{{ $json.userId }})"
             },
             {
               "name": "limit",
@@ -79,7 +79,8 @@
           "boolean": [
             {
               "value1": "={{ $json.authorized }}",
-              "value2": true
+              "value2": true,
+              "operation": "equal"
             }
           ]
         }
@@ -133,7 +134,7 @@
           "parameters": [
             {
               "name": "where",
-              "value": "(tg_id,eq,{{ $json.userId }})"
+              "value": "=(tg_id,eq,{{ $json.userId }})"
             }
           ]
         },
@@ -211,7 +212,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Pipeline 1: State Merge\nconst routerData = $('Pipeline 1: Router').first().json;\nlet dbUser={};\ntry {\n  const nocoResp=$('NocoDB Find User').first().json;\n  if(nocoResp.list&&nocoResp.list.length>0){dbUser=nocoResp.list[0];}\n  else{dbUser=$('NocoDB Create User').first().json;}\n} catch(_){}\nconst userState=dbUser.state??'empty';\nconst currentIndex=dbUser.current_index??0;\nconst rowId=dbUser.Id??null;\nconst images=(()=>{\n  const raw=dbUser.images;\n  if(!raw)return[];\n  if(typeof raw==='string'){try{return JSON.parse(raw);}catch(_){return[];}}\n  return Array.isArray(raw)?raw:[];\n})();\nconst {updateType}=routerData;\nlet routeKey;\nif(updateType==='callback_query'){routeKey='pipeline4';}\nelse if(updateType==='photo'&&(userState==='empty'||userState==='collecting')){routeKey='pipeline2';}\nelse if(updateType==='text'&&(userState==='tagging'||userState.startsWith('editing_'))){routeKey='pipeline3';}\nelse{routeKey='unknown';}\nreturn [{json:{...routerData,userState,currentIndex,images,rowId,routeKey}}];"
+        "jsCode": "// Pipeline 1: State Merge\nconst routerData = $('Pipeline 1: Router').first().json;\nlet dbUser={};\ntry {\n  const nocoResp=$('NocoDB Find User').first().json;\n  if(nocoResp.list&&nocoResp.list.length>0){dbUser=nocoResp.list[0];}\n  else{dbUser=$('NocoDB Create User').first().json;}\n} catch(_){}\nconst userState=dbUser.state??'empty';\nconst currentIndex=dbUser.current_index??0;\nconst rowId=dbUser.Id??dbUser.id??null;\nconst images=(()=>{\n  const raw=dbUser.images;\n  if(!raw)return[];\n  if(typeof raw==='string'){try{return JSON.parse(raw);}catch(_){return[];}}\n  return Array.isArray(raw)?raw:[];\n})();\nconst {updateType}=routerData;\nlet routeKey;\nif(updateType==='callback_query'){routeKey='pipeline4';}\nelse if(updateType==='photo'&&(userState==='empty'||userState==='collecting')){routeKey='pipeline2';}\nelse if(updateType==='text'&&(userState==='tagging'||userState.startsWith('editing_'))){routeKey='pipeline3';}\nelse{routeKey='unknown';}\nreturn [{json:{...routerData,userState,currentIndex,images,rowId,routeKey}}];"
       },
       "id": "code-state-merge",
       "name": "Pipeline 1: State Merge",
@@ -278,7 +279,8 @@
     {
       "parameters": {
         "amount": 3,
-        "unit": "seconds"
+        "unit": "seconds",
+        "resume": "timeInterval"
       },
       "id": "wait-album",
       "name": "Wait 3s (album buffer)",
@@ -1028,5 +1030,12 @@
   },
   "staticData": null,
   "tags": [],
-  "pinData": {}
+  "pinData": {},
+  "versionId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "id": "telegram-photo-tagger-v1",
+  "active": false,
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": ""
+  }
 }

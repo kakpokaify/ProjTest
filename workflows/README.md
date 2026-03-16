@@ -209,12 +209,30 @@ Set these as **n8n environment variables** or use n8n credentials.
 | `pipeline4_review_report.js`           | P4 Code Node – build review report           |
 | `telegram_bodies.json`                 | Reference Telegram API JSON bodies           |
 
-## Import
+## Integration Guide
+
+A detailed step-by-step guide (in Russian) covering:
+
+- NocoDB table setup (`Users` and `users` schemas)
+- Telegram bot creation via @BotFather
+- n8n environment variables and credentials configuration
+- Importing `workflow.json` and wiring credentials to nodes
+- Activating the workflow and registering the Telegram webhook
+- Per-pipeline node walkthrough
+- Testing scenarios and troubleshooting
+
+📄 **[n8n_integration_guide.md](n8n_integration_guide.md)**
+
+## Quick Import
 
 1. Open n8n → **Workflows** → **Import from file**.
 2. Select `workflows/workflow.json`.
-3. Set the environment variables above.
-4. Activate the workflow and register the webhook with Telegram:
+3. Set the three environment variables (`TELEGRAM_BOT_TOKEN`, `NOCODB_BASE_URL`, `NOCODB_PROJECT_ID`).
+4. Create a **Header Auth** credential named `NocoDB API Key` with header `xc-token`.
+5. Wire that credential to all 6 NocoDB HTTP nodes.
+6. Activate the workflow and register the webhook with Telegram:
    ```
    https://api.telegram.org/bot<TOKEN>/setWebhook?url=<YOUR_N8N_WEBHOOK_URL>
    ```
+
+See [`n8n_integration_guide.md`](n8n_integration_guide.md) for full details.

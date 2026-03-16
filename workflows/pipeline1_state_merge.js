@@ -27,6 +27,7 @@ try {
   dbUser = {};
 }
 
+const rowId        = dbUser.Id ?? dbUser.id ?? null;
 const userState    = dbUser.state         ?? 'empty';
 const currentIndex = dbUser.current_index ?? 0;
 const images       = (() => {
