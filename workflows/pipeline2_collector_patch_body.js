@@ -6,7 +6,7 @@
 // ============================================================
 
 const item = $input.first();
-const { mergedImages, userId } = item.json;
+const { mergedImages } = item.json;
 
 const nocoBody = {
   state: 'collecting',

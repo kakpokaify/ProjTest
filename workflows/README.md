@@ -6,20 +6,36 @@ A Telegram bot workflow for uploading up to 8 photos (individually or as an albu
 
 ## Architecture
 
-The workflow is split into four logical pipelines:
+The workflow is split into five logical pipelines:
 
 ```
 Telegram Webhook
       │
       ▼
+[Pipeline 0] Authorization Check  ──(denied)──► TG: Access Denied (stop)
+      │ (authorized)
+      ▼
 [Pipeline 1] Router & State Loader
       │  (loads/creates user in NocoDB, determines route)
-      ├──► [Pipeline 2] Collector     (photo upload + album buffer)
+      ├──► [Pipeline 2] Collector      (photo upload + album buffer)
       ├──► [Pipeline 3] Tagging Engine (text tag processing)
       └──► [Pipeline 4] Callback Handler (inline-button actions)
 ```
 
-### NocoDB `users` table schema
+### NocoDB `Users` table schema (authorization)
+
+| Field         | Type    | Description                                                     |
+|---------------|---------|-----------------------------------------------------------------|
+| `Telegram ID` | string  | Telegram user ID — used to look up the user                     |
+| `Priority`    | boolean | `true` → access granted                                         |
+| `Status`      | string  | `"Admin"` or `"Free unlimited access"` → access granted         |
+
+Access is granted when **any one** of these conditions is true:
+- `Priority === true`
+- `Status === "Admin"`
+- `Status === "Free unlimited access"`
+
+### NocoDB `users` table schema (state machine)
 
 | Field           | Type   | Description                                          |
 |-----------------|--------|------------------------------------------------------|
@@ -27,6 +43,35 @@ Telegram Webhook
 | `state`         | string | `empty` \| `collecting` \| `tagging` \| `review` \| `editing_N` |
 | `current_index` | number | Index of the photo currently being tagged            |
 | `images`        | JSON   | `[{"file_id": "...", "tag": null}, ...]`             |
+
+---
+
+## Pipeline 0 – Authorization Check
+
+**Files:** `pipeline0_auth.js`
+
+Runs for **every** incoming update, before any state logic.
+
+1. **Extract Telegram Data** (Code Node) – Parses the raw Telegram Update just enough to extract `chatId` and `userId`. This output is reused by Pipeline 1 later.
+
+2. **Auth: Find User** (HTTP GET) – Queries the NocoDB `Users` table:
+   ```
+   GET /Users?where=(Telegram ID,eq,{userId})&limit=1
+   ```
+
+3. **Pipeline 0: Auth Check** (Code Node) – Evaluates the NocoDB response:
+   ```js
+   authorized = (Priority === true || Priority === 'true')
+             || Status === 'Admin'
+             || Status === 'Free unlimited access'
+   ```
+
+4. **Authorized?** (IF Node):
+   - **true** → continues to Pipeline 1 Router.
+   - **false** → `TG: Access Denied` sends the user a denial message and the workflow stops:
+     ```
+     ⛔ У вас нет доступа к этому боту. Обратитесь к администратору.
+     ```
 
 ---
 
@@ -154,6 +199,7 @@ Set these as **n8n environment variables** or use n8n credentials.
 | File                                  | Purpose                                      |
 |---------------------------------------|----------------------------------------------|
 | `workflow.json`                        | Complete importable n8n workflow              |
+| `pipeline0_auth.js`                    | P0 Code Node – authorization check logic     |
 | `pipeline1_router.js`                  | P1 Code Node – parse Telegram Update         |
 | `pipeline1_state_merge.js`             | P1 Code Node – merge NocoDB state            |
 | `pipeline2_collector_aggregate.js`     | P2 Code Node – aggregate album photos        |

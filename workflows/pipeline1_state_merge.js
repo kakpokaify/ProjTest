@@ -63,6 +63,7 @@ return [{
     userState,
     currentIndex,
     images,
+    rowId,
     routeKey,
   },
 }];

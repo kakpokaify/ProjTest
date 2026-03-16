@@ -9,7 +9,6 @@ const {
   text,
   images,
   currentIndex,
-  userId,
   chatId,
   messageId,
   rowId,

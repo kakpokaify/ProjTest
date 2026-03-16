@@ -5,9 +5,11 @@
 // ============================================================
 
 const item = $input.first();
-const { updatedImages, chatId, callbackQueryId } = item.json;
+const { chatId } = item.json;
 
-const images = Array.isArray(updatedImages) ? updatedImages : [];
+const images = Array.isArray(item.json.updatedImages)
+  ? item.json.updatedImages
+  : (Array.isArray(item.json.images) ? item.json.images : []);
 
 // ── Build summary text ───────────────────────────────────────
 
