@@ -1,0 +1,111 @@
+{
+  "_comment": "Ready-to-use Telegram API JSON bodies for n8n HTTP Request nodes. Replace {{ }} placeholders with n8n expression syntax.",
+
+  "pipeline2_send_collected": {
+    "_node": "HTTP Request – POST https://api.telegram.org/bot{TOKEN}/sendMessage",
+    "_description": "Pipeline 2: notify user that photos are collected and offer tagging",
+    "chat_id": "{{ $json.chatId }}",
+    "text": "✅ Фото загружены ({{ $json.totalPhotos }} шт.). Нажмите кнопку ниже, чтобы назначить теги.",
+    "reply_markup": {
+      "inline_keyboard": [
+        [
+          {
+            "text": "🏷 Назначить теги",
+            "callback_data": "start_tagging"
+          }
+        ]
+      ]
+    }
+  },
+
+  "pipeline3_edit_message_media": {
+    "_node": "HTTP Request – POST https://api.telegram.org/bot{TOKEN}/editMessageMedia",
+    "_description": "Pipeline 3: replace current photo with the next one and prompt for tag",
+    "chat_id": "{{ $json.chatId }}",
+    "message_id": "{{ $json.messageId }}",
+    "media": {
+      "type": "photo",
+      "media": "{{ $json.nextFileId }}",
+      "caption": "Назначьте тег для фото №{{ $json.nextPhotoNumber }}"
+    },
+    "reply_markup": {
+      "inline_keyboard": [
+        [
+          {
+            "text": "◀ Назад",
+            "callback_data": "back"
+          },
+          {
+            "text": "✖ Отмена",
+            "callback_data": "cancel"
+          }
+        ]
+      ]
+    }
+  },
+
+  "pipeline3_send_first_photo": {
+    "_node": "HTTP Request – POST https://api.telegram.org/bot{TOKEN}/sendPhoto",
+    "_description": "Pipeline 3 / Pipeline 4 start_tagging: send the first photo for tagging",
+    "chat_id": "{{ $json.chatId }}",
+    "photo": "{{ $json.images[0].file_id }}",
+    "caption": "Назначьте тег для фото №1",
+    "reply_markup": {
+      "inline_keyboard": [
+        [
+          {
+            "text": "✖ Отмена",
+            "callback_data": "cancel"
+          }
+        ]
+      ]
+    }
+  },
+
+  "pipeline4_delete_message": {
+    "_node": "HTTP Request – POST https://api.telegram.org/bot{TOKEN}/deleteMessage",
+    "_description": "Pipeline 4 cancel: delete the current message and reset state",
+    "chat_id": "{{ $json.chatId }}",
+    "message_id": "{{ $json.messageId }}"
+  },
+
+  "pipeline4_edit_message_media_back": {
+    "_node": "HTTP Request – POST https://api.telegram.org/bot{TOKEN}/editMessageMedia",
+    "_description": "Pipeline 4 back: go to previous photo",
+    "chat_id": "{{ $json.chatId }}",
+    "message_id": "{{ $json.messageId }}",
+    "media": {
+      "type": "photo",
+      "media": "{{ $json.images[$json.newIndex].file_id }}",
+      "caption": "Назначьте тег для фото №{{ $json.newIndex + 1 }}"
+    },
+    "reply_markup": {
+      "inline_keyboard": [
+        [
+          {
+            "text": "◀ Назад",
+            "callback_data": "back"
+          },
+          {
+            "text": "✖ Отмена",
+            "callback_data": "cancel"
+          }
+        ]
+      ]
+    }
+  },
+
+  "pipeline4_answer_callback_query": {
+    "_node": "HTTP Request – POST https://api.telegram.org/bot{TOKEN}/answerCallbackQuery",
+    "_description": "Pipeline 4: always answer the callback query to remove the loading spinner",
+    "callback_query_id": "{{ $json.callbackQueryId }}"
+  },
+
+  "pipeline4_review_message": {
+    "_node": "HTTP Request – POST https://api.telegram.org/bot{TOKEN}/sendMessage",
+    "_description": "Pipeline 4 show_review / Pipeline 3 final: display tagged image summary",
+    "chat_id": "{{ $json.chatId }}",
+    "text": "{{ $json.reviewText }}",
+    "reply_markup": "{{ $json.reviewKeyboard }}"
+  }
+}
