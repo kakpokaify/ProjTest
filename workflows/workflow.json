@@ -1,0 +1,460 @@
+{
+  "name": "Telegram Photo Tagger – State Machine",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "telegram-webhook",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-entry",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Pipeline 1: Router ──────────────────────────────────────\nconst item = $input.first();\nconst body = item.json.body ?? item.json;\n\nlet updateType = 'unknown';\nlet chatId     = null;\nlet userId     = null;\nlet text       = null;\nlet fileId     = null;\nlet mediaGroupId = null;\nlet messageId    = null;\nlet callbackQueryId = null;\nlet callbackData    = null;\n\nif (body.message) {\n  const msg = body.message;\n  chatId       = msg.chat.id;\n  userId       = String(msg.from.id);\n  messageId    = msg.message_id;\n  mediaGroupId = msg.media_group_id ?? null;\n\n  if (msg.text) {\n    updateType = 'text';\n    text       = msg.text;\n  } else if (msg.photo && msg.photo.length > 0) {\n    updateType = 'photo';\n    fileId     = msg.photo[msg.photo.length - 1].file_id;\n  } else if (msg.document) {\n    updateType = 'document';\n    fileId     = msg.document.file_id;\n  }\n} else if (body.callback_query) {\n  const cb = body.callback_query;\n  chatId          = cb.message.chat.id;\n  userId          = String(cb.from.id);\n  messageId       = cb.message.message_id;\n  callbackQueryId = cb.id;\n  callbackData    = cb.data;\n  updateType      = 'callback_query';\n}\n\nif (!userId) {\n  return [{ json: { skip: true, reason: 'no_user_id' } }];\n}\n\nreturn [{\n  json: {\n    updateType, chatId, userId, text, fileId,\n    mediaGroupId, messageId, callbackQueryId, callbackData,\n  },\n}];"
+      },
+      "id": "code-router",
+      "name": "Pipeline 1: Router",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.NOCODB_BASE_URL }}/api/v1/db/data/noco/{{ $env.NOCODB_PROJECT_ID }}/users",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "where", "value": "(tg_id,eq,{{ $json.userId }})" }
+          ]
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "nocodb-find-user",
+      "name": "NocoDB Find User",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.list.length }}",
+              "operation": "equal",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "id": "if-user-exists",
+      "name": "User Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.NOCODB_BASE_URL }}/api/v1/db/data/noco/{{ $env.NOCODB_PROJECT_ID }}/users",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "tg_id", "value": "={{ $('Pipeline 1: Router').item.json.userId }}" },
+            { "name": "state", "value": "empty" },
+            { "name": "current_index", "value": "=0" },
+            { "name": "images", "value": "=[]" }
+          ]
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "nocodb-create-user",
+      "name": "NocoDB Create User",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [900, 480]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Pipeline 1: State Merge ──────────────────────────────────\nconst routerData = $('Pipeline 1: Router').first().json;\n\nlet dbUser = {};\ntry {\n  const nocoResp = $('NocoDB Find User').first().json;\n  if (nocoResp.list && nocoResp.list.length > 0) {\n    dbUser = nocoResp.list[0];\n  } else {\n    dbUser = $('NocoDB Create User').first().json;\n  }\n} catch (_) {}\n\nconst userState    = dbUser.state         ?? 'empty';\nconst currentIndex = dbUser.current_index ?? 0;\nconst rowId        = dbUser.Id            ?? null;\nconst images = (() => {\n  const raw = dbUser.images;\n  if (!raw) return [];\n  if (typeof raw === 'string') { try { return JSON.parse(raw); } catch (_) { return []; } }\n  return Array.isArray(raw) ? raw : [];\n})();\n\nconst { updateType } = routerData;\nlet routeKey;\nif (updateType === 'callback_query') {\n  routeKey = 'pipeline4';\n} else if (updateType === 'photo' && (userState === 'empty' || userState === 'collecting')) {\n  routeKey = 'pipeline2';\n} else if (updateType === 'text' && (userState === 'tagging' || userState.startsWith('editing_'))) {\n  routeKey = 'pipeline3';\n} else {\n  routeKey = 'unknown';\n}\n\nreturn [{ json: { ...routerData, userState, currentIndex, images, rowId, routeKey } }];"
+      },
+      "id": "code-state-merge",
+      "name": "Pipeline 1: State Merge",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "rules": [
+            { "outputKey": "pipeline2", "conditions": { "string": [{ "value1": "={{ $json.routeKey }}", "operation": "equal", "value2": "pipeline2" }] } },
+            { "outputKey": "pipeline3", "conditions": { "string": [{ "value1": "={{ $json.routeKey }}", "operation": "equal", "value2": "pipeline3" }] } },
+            { "outputKey": "pipeline4", "conditions": { "string": [{ "value1": "={{ $json.routeKey }}", "operation": "equal", "value2": "pipeline4" }] } }
+          ]
+        },
+        "fallbackOutput": "none"
+      },
+      "id": "switch-route",
+      "name": "Route Switch",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 2,
+      "position": [1340, 300]
+    },
+
+    {
+      "parameters": {
+        "amount": 3,
+        "unit": "seconds"
+      },
+      "id": "wait-album",
+      "name": "Wait 3s (album buffer)",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [1560, 180]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Pipeline 2: Aggregate photos ────────────────────────────\nconst items = $input.all();\nconst seenIds  = new Set();\nconst newPhotos = [];\nfor (const it of items) {\n  const fid = it.json.fileId;\n  if (fid && !seenIds.has(fid)) { seenIds.add(fid); newPhotos.push({ file_id: fid, tag: null }); }\n}\nconst base     = items[0].json;\nconst existing = Array.isArray(base.images) ? base.images : [];\nconst existingIds  = new Set(existing.map(p => p.file_id));\nconst toAdd        = newPhotos.filter(p => !existingIds.has(p.file_id));\nconst mergedImages = [...existing, ...toAdd].slice(0, 8);\nreturn [{ json: { ...base, mergedImages, totalPhotos: mergedImages.length } }];"
+      },
+      "id": "code-aggregate",
+      "name": "Pipeline 2: Aggregate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1780, 180]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.NOCODB_BASE_URL }}/api/v1/db/data/noco/{{ $env.NOCODB_PROJECT_ID }}/users/{{ $json.rowId }}",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({ state: 'collecting', images: JSON.stringify($json.mergedImages), current_index: 0 }) }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "nocodb-patch-p2",
+      "name": "NocoDB PATCH – Collecting",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2000, 180]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({ chat_id: $json.chatId, text: '✅ Фото загружены (' + $json.totalPhotos + ' шт.). Нажмите кнопку ниже, чтобы назначить теги.', reply_markup: { inline_keyboard: [[{ text: '🏷 Назначить теги', callback_data: 'start_tagging' }]] } }) }}",
+        "options": {}
+      },
+      "id": "tg-send-collected",
+      "name": "TG: Фото загружены",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2220, 180]
+    },
+
+    {
+      "parameters": {
+        "jsCode": "// ── Pipeline 3: Tagging Engine ───────────────────────────────\nconst item = $input.first();\nconst { text, images, currentIndex, userState, rowId, chatId, messageId } = item.json;\n\nlet targetIndex = currentIndex;\nif (userState && userState.startsWith('editing_')) {\n  const x = parseInt(userState.split('_')[1], 10);\n  if (!Number.isNaN(x) && x >= 0 && x < images.length) targetIndex = x;\n}\n\nconst updatedImages = images.map((img, idx) =>\n  idx === targetIndex ? { ...img, tag: text } : img\n);\n\nlet newIndex = currentIndex;\nlet newState, nextFileId = null, nextPhotoNumber = null;\n\nif (userState && userState.startsWith('editing_')) {\n  newState = 'review';\n} else {\n  newIndex = currentIndex + 1;\n  if (newIndex < updatedImages.length) {\n    newState         = 'tagging';\n    nextFileId       = updatedImages[newIndex].file_id;\n    nextPhotoNumber  = newIndex + 1;\n  } else {\n    newState = 'review';\n  }\n}\n\nconst nocoBody = { state: newState, images: JSON.stringify(updatedImages), current_index: newIndex };\nreturn [{ json: { ...item.json, updatedImages, newIndex, newState, nextFileId, nextPhotoNumber, nocoBody, rowId } }];"
+      },
+      "id": "code-tagging",
+      "name": "Pipeline 3: Tagging Engine",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.NOCODB_BASE_URL }}/api/v1/db/data/noco/{{ $env.NOCODB_PROJECT_ID }}/users/{{ $json.rowId }}",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify($json.nocoBody) }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "nocodb-patch-p3",
+      "name": "NocoDB PATCH – Tag",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1780, 300]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "rules": [
+            { "outputKey": "next_photo", "conditions": { "string": [{ "value1": "={{ $json.newState }}", "operation": "equal", "value2": "tagging" }] } },
+            { "outputKey": "review",     "conditions": { "string": [{ "value1": "={{ $json.newState }}", "operation": "equal", "value2": "review"  }] } }
+          ]
+        },
+        "fallbackOutput": "none"
+      },
+      "id": "switch-tag-result",
+      "name": "Tag Result Switch",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 2,
+      "position": [2000, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/editMessageMedia",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({ chat_id: $json.chatId, message_id: $json.messageId, media: { type: 'photo', media: $json.nextFileId, caption: 'Назначьте тег для фото №' + $json.nextPhotoNumber }, reply_markup: { inline_keyboard: [[ ...(($json.newIndex > 0) ? [{ text: '◀ Назад', callback_data: 'back' }] : []), { text: '✖ Отмена', callback_data: 'cancel' } ]] } }) }}",
+        "options": {}
+      },
+      "id": "tg-edit-media-next",
+      "name": "TG: Следующее фото",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2220, 240]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Pipeline 3 / 4: Build Review Report ─────────────────────\nconst item = $input.first();\nconst images = Array.isArray(item.json.updatedImages) ? item.json.updatedImages : (Array.isArray(item.json.images) ? item.json.images : []);\nconst lines = images.map((img, i) => `Изображение ${i + 1} — ${img.tag ?? '(без тега)'}`);\nconst reviewText = lines.join('\\n');\nconst editButtons = images.map((img, i) => [{ text: `✏️ Изменить фото ${i + 1}`, callback_data: `edit_${i}` }]);\neditButtons.push([{ text: '✅ Готово', callback_data: 'done' }]);\nconst reviewKeyboard = { inline_keyboard: editButtons };\nreturn [{ json: { ...item.json, reviewText, reviewKeyboard } }];"
+      },
+      "id": "code-review-report",
+      "name": "Build Review Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2220, 360]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({ chat_id: $json.chatId, text: $json.reviewText, reply_markup: $json.reviewKeyboard }) }}",
+        "options": {}
+      },
+      "id": "tg-send-review",
+      "name": "TG: Обзор тегов",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2440, 360]
+    },
+
+    {
+      "parameters": {
+        "jsCode": "// ── Pipeline 4: Callback Handler ────────────────────────────\nconst item = $input.first();\nconst { callbackData, callbackQueryId, chatId, messageId, images, currentIndex, rowId } = item.json;\n\nlet nocoBody = null, tgAction = null, tgBody = null, routeKey = 'noop', newIndex = currentIndex;\n\nfunction tagKeyboard(idx) {\n  const btns = [];\n  if (idx > 0) btns.push({ text: '◀ Назад', callback_data: 'back' });\n  btns.push({ text: '✖ Отмена', callback_data: 'cancel' });\n  return { inline_keyboard: [btns] };\n}\n\nif (callbackData === 'cancel') {\n  nocoBody = { state: 'empty', images: JSON.stringify([]), current_index: 0 };\n  tgAction = 'deleteMessage';\n  tgBody   = { chat_id: chatId, message_id: messageId };\n  routeKey = 'cancel';\n} else if (callbackData === 'back') {\n  newIndex = Math.max(0, currentIndex - 1);\n  nocoBody = { state: 'tagging', current_index: newIndex };\n  tgAction = 'editMessageMedia';\n  tgBody   = { chat_id: chatId, message_id: messageId, media: { type: 'photo', media: images[newIndex]?.file_id ?? '', caption: `Назначьте тег для фото №${newIndex + 1}` }, reply_markup: tagKeyboard(newIndex) };\n  routeKey = 'back';\n} else if (callbackData === 'start_tagging') {\n  newIndex = 0;\n  nocoBody = { state: 'tagging', current_index: 0 };\n  tgAction = 'sendPhoto';\n  tgBody   = { chat_id: chatId, photo: images[0]?.file_id ?? '', caption: 'Назначьте тег для фото №1', reply_markup: tagKeyboard(0) };\n  routeKey = 'start_tagging';\n} else if (callbackData === 'done') {\n  nocoBody = { state: 'empty', images: JSON.stringify([]), current_index: 0 };\n  tgAction = 'answerCallbackQuery';\n  tgBody   = { callback_query_id: callbackQueryId, text: '✅ Теги сохранены!' };\n  routeKey = 'done';\n} else if (callbackData && callbackData.startsWith('edit_')) {\n  const x = parseInt(callbackData.split('_')[1], 10);\n  if (!Number.isNaN(x) && x >= 0 && x < images.length) {\n    nocoBody = { state: `editing_${x}`, current_index: x };\n    tgAction = 'editMessageMedia';\n    tgBody   = { chat_id: chatId, message_id: messageId, media: { type: 'photo', media: images[x].file_id, caption: `Введите новый тег для фото №${x + 1}` }, reply_markup: tagKeyboard(x) };\n    routeKey = 'edit';\n  }\n} else if (callbackData === 'show_review') {\n  routeKey = 'show_review';\n}\n\nconst answerCbBody = { callback_query_id: callbackQueryId };\nreturn [{ json: { ...item.json, nocoBody, tgAction, tgBody, answerCbBody, routeKey, newIndex } }];"
+      },
+      "id": "code-callback",
+      "name": "Pipeline 4: Callback Handler",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 420]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.NOCODB_BASE_URL }}/api/v1/db/data/noco/{{ $env.NOCODB_PROJECT_ID }}/users/{{ $json.rowId }}",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify($json.nocoBody) }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "nocodb-patch-p4",
+      "name": "NocoDB PATCH – Callback",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1780, 420]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "rules": [
+            { "outputKey": "cancel",       "conditions": { "string": [{ "value1": "={{ $json.routeKey }}", "operation": "equal", "value2": "cancel"       }] } },
+            { "outputKey": "back",         "conditions": { "string": [{ "value1": "={{ $json.routeKey }}", "operation": "equal", "value2": "back"         }] } },
+            { "outputKey": "start_tagging","conditions": { "string": [{ "value1": "={{ $json.routeKey }}", "operation": "equal", "value2": "start_tagging"}] } },
+            { "outputKey": "edit",         "conditions": { "string": [{ "value1": "={{ $json.routeKey }}", "operation": "equal", "value2": "edit"         }] } },
+            { "outputKey": "done",         "conditions": { "string": [{ "value1": "={{ $json.routeKey }}", "operation": "equal", "value2": "done"         }] } },
+            { "outputKey": "show_review",  "conditions": { "string": [{ "value1": "={{ $json.routeKey }}", "operation": "equal", "value2": "show_review"  }] } }
+          ]
+        },
+        "fallbackOutput": "none"
+      },
+      "id": "switch-callback",
+      "name": "Callback Route Switch",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 2,
+      "position": [2000, 420]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/deleteMessage",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify($json.tgBody) }}",
+        "options": {}
+      },
+      "id": "tg-delete-message",
+      "name": "TG: deleteMessage",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2220, 420]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/editMessageMedia",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify($json.tgBody) }}",
+        "options": {}
+      },
+      "id": "tg-edit-media-back",
+      "name": "TG: editMessageMedia (back/edit)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2220, 480]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendPhoto",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify($json.tgBody) }}",
+        "options": {}
+      },
+      "id": "tg-send-first-photo",
+      "name": "TG: sendPhoto (start_tagging)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2220, 540]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/answerCallbackQuery",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify($json.tgBody) }}",
+        "options": {}
+      },
+      "id": "tg-answer-cb-done",
+      "name": "TG: answerCallbackQuery (done)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2220, 600]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/answerCallbackQuery",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify($json.answerCbBody) }}",
+        "options": {}
+      },
+      "id": "tg-answer-cb",
+      "name": "TG: answerCallbackQuery (ack)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2440, 420]
+    }
+  ],
+
+  "connections": {
+    "Webhook": {
+      "main": [[{ "node": "Pipeline 1: Router", "type": "main", "index": 0 }]]
+    },
+    "Pipeline 1: Router": {
+      "main": [[{ "node": "NocoDB Find User", "type": "main", "index": 0 }]]
+    },
+    "NocoDB Find User": {
+      "main": [[{ "node": "User Exists?", "type": "main", "index": 0 }]]
+    },
+    "User Exists?": {
+      "main": [
+        [{ "node": "NocoDB Create User",      "type": "main", "index": 0 }],
+        [{ "node": "Pipeline 1: State Merge", "type": "main", "index": 0 }]
+      ]
+    },
+    "NocoDB Create User": {
+      "main": [[{ "node": "Pipeline 1: State Merge", "type": "main", "index": 0 }]]
+    },
+    "Pipeline 1: State Merge": {
+      "main": [[{ "node": "Route Switch", "type": "main", "index": 0 }]]
+    },
+    "Route Switch": {
+      "main": [
+        [{ "node": "Wait 3s (album buffer)",        "type": "main", "index": 0 }],
+        [{ "node": "Pipeline 3: Tagging Engine",    "type": "main", "index": 0 }],
+        [{ "node": "Pipeline 4: Callback Handler",  "type": "main", "index": 0 }]
+      ]
+    },
+    "Wait 3s (album buffer)": {
+      "main": [[{ "node": "Pipeline 2: Aggregate", "type": "main", "index": 0 }]]
+    },
+    "Pipeline 2: Aggregate": {
+      "main": [[{ "node": "NocoDB PATCH – Collecting", "type": "main", "index": 0 }]]
+    },
+    "NocoDB PATCH – Collecting": {
+      "main": [[{ "node": "TG: Фото загружены", "type": "main", "index": 0 }]]
+    },
+    "Pipeline 3: Tagging Engine": {
+      "main": [[{ "node": "NocoDB PATCH – Tag", "type": "main", "index": 0 }]]
+    },
+    "NocoDB PATCH – Tag": {
+      "main": [[{ "node": "Tag Result Switch", "type": "main", "index": 0 }]]
+    },
+    "Tag Result Switch": {
+      "main": [
+        [{ "node": "TG: Следующее фото",  "type": "main", "index": 0 }],
+        [{ "node": "Build Review Report",  "type": "main", "index": 0 }]
+      ]
+    },
+    "Build Review Report": {
+      "main": [[{ "node": "TG: Обзор тегов", "type": "main", "index": 0 }]]
+    },
+    "Pipeline 4: Callback Handler": {
+      "main": [[{ "node": "NocoDB PATCH – Callback", "type": "main", "index": 0 }]]
+    },
+    "NocoDB PATCH – Callback": {
+      "main": [[{ "node": "Callback Route Switch", "type": "main", "index": 0 }]]
+    },
+    "Callback Route Switch": {
+      "main": [
+        [{ "node": "TG: deleteMessage",                  "type": "main", "index": 0 }],
+        [{ "node": "TG: editMessageMedia (back/edit)",   "type": "main", "index": 0 }],
+        [{ "node": "TG: sendPhoto (start_tagging)",      "type": "main", "index": 0 }],
+        [{ "node": "TG: editMessageMedia (back/edit)",   "type": "main", "index": 0 }],
+        [{ "node": "TG: answerCallbackQuery (done)",     "type": "main", "index": 0 }],
+        [{ "node": "Build Review Report",                "type": "main", "index": 0 }]
+      ]
+    },
+    "TG: deleteMessage":                { "main": [[{ "node": "TG: answerCallbackQuery (ack)", "type": "main", "index": 0 }]] },
+    "TG: editMessageMedia (back/edit)": { "main": [[{ "node": "TG: answerCallbackQuery (ack)", "type": "main", "index": 0 }]] },
+    "TG: sendPhoto (start_tagging)":    { "main": [[{ "node": "TG: answerCallbackQuery (ack)", "type": "main", "index": 0 }]] },
+    "TG: answerCallbackQuery (done)":   { "main": [[{ "node": "TG: answerCallbackQuery (ack)", "type": "main", "index": 0 }]] }
+  },
+
+  "settings": {
+    "executionOrder": "v1"
+  },
+
+  "staticData": null,
+  "tags": [],
+  "pinData": {}
+}
